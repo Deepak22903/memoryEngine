@@ -16,13 +16,8 @@ except Exception:  # pragma: no cover - optional dependency
     Nominatim = None
     _GEOPY_AVAILABLE = False
 
-try:
-    import face_recognition
-
-    _FACE_AVAILABLE = True
-except Exception:  # pragma: no cover - optional dependency
-    face_recognition = None
-    _FACE_AVAILABLE = False
+_FACE_MODULE = None
+_FACE_IMPORT_ERROR: str | None = None
 
 
 @dataclass(frozen=True)
@@ -85,15 +80,32 @@ def _reverse_geocode(
     return _format_location_label(address)
 
 
-def _count_faces(image_path: Path) -> int | None:
-    if not _FACE_AVAILABLE:
-        return None
+def _get_face_recognition():
+    global _FACE_MODULE, _FACE_IMPORT_ERROR
+    if _FACE_IMPORT_ERROR:
+        return None, _FACE_IMPORT_ERROR
+    if _FACE_MODULE is not None:
+        return _FACE_MODULE, None
     try:
-        image = face_recognition.load_image_file(str(image_path))
-        locations = face_recognition.face_locations(image)
-        return len(locations)
-    except Exception:
-        return None
+        import face_recognition  # type: ignore
+
+        _FACE_MODULE = face_recognition
+        return _FACE_MODULE, None
+    except Exception as exc:  # pragma: no cover - optional dependency
+        _FACE_IMPORT_ERROR = str(exc)
+        return None, _FACE_IMPORT_ERROR
+
+
+def _count_faces(image_path: Path) -> tuple[int | None, str | None]:
+    module, error = _get_face_recognition()
+    if module is None:
+        return None, error or "face_recognition_unavailable"
+    try:
+        image = module.load_image_file(str(image_path))
+        locations = module.face_locations(image)
+        return len(locations), None
+    except Exception as exc:
+        return None, str(exc)
 
 
 def _event_key(date_value: str, location_label: str | None, window_days: int) -> str:
@@ -169,7 +181,9 @@ def categorize_from_db(
 
             face_count = None
             if enable_faces:
-                face_count = _count_faces(Path(path_value))
+                face_count, face_error = _count_faces(Path(path_value))
+                if face_error and error is None:
+                    error = f"face_error: {face_error}"
 
             event_key = _event_key(date_taken, location_label, event_window_days)
             if event_key not in event_ids:
