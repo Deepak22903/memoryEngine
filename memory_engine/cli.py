@@ -9,6 +9,7 @@ from .categorize import categorize_from_db
 from .organize import copy_from_categories
 from .maintain import run_maintenance
 from .pipeline import run_pipeline
+from .move_all import move_media
 from .scan import DEFAULT_EXTENSIONS, scan_to_csv
 
 
@@ -349,6 +350,58 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Overwrite existing files instead of renaming.",
     )
 
+    move_parser = subparsers.add_parser(
+        "move-all", help="Scan for media files and move them into one destination"
+    )
+    move_parser.add_argument(
+        "--root",
+        action="append",
+        default=[],
+        help="Root directory to scan (repeatable). Defaults to current directory.",
+    )
+    move_parser.add_argument(
+        "--output",
+        default="moved_media",
+        help="Destination directory for moved files (default: moved_media).",
+    )
+    move_parser.add_argument(
+        "--extensions",
+        default=",".join(sorted(DEFAULT_EXTENSIONS)),
+        help="Comma-separated list of extensions to include.",
+    )
+    move_parser.add_argument(
+        "--exclude-dir",
+        action="append",
+        default=[],
+        help="Directory name to exclude (repeatable).",
+    )
+    move_parser.add_argument(
+        "--include-hidden",
+        action="store_true",
+        help="Include hidden files and directories.",
+    )
+    move_parser.add_argument(
+        "--follow-symlinks",
+        action="store_true",
+        help="Follow symlinked directories.",
+    )
+    move_parser.add_argument(
+        "--max-files",
+        type=int,
+        default=None,
+        help="Stop after moving N files (for quick tests).",
+    )
+    move_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview move operations without moving.",
+    )
+    move_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Overwrite existing files instead of renaming.",
+    )
+
     return parser
 
 
@@ -491,6 +544,29 @@ def main(argv: list[str] | None = None) -> int:
             f"Metadata: {result.metadata_db or 'skipped'} "
             f"Categories: {result.categories_csv or 'skipped'} "
             f"Organized: {result.organized_root or 'skipped'}"
+        )
+        return 0
+
+    if args.command == "move-all":
+        roots = [Path(p) for p in args.root] if args.root else [Path.cwd()]
+        extensions = [ext.strip() for ext in args.extensions.split(",") if ext.strip()]
+        output_root = Path(args.output)
+        results = move_media(
+            roots=roots,
+            output_root=output_root,
+            extensions=extensions,
+            exclude_dirs=args.exclude_dir,
+            include_hidden=args.include_hidden,
+            follow_symlinks=args.follow_symlinks,
+            max_files=args.max_files,
+            dry_run=args.dry_run,
+            overwrite=args.overwrite,
+        )
+        moved = sum(1 for result in results if result.status == "moved")
+        errors = [result for result in results if result.status == "error"]
+        print(
+            f"Moved {moved} files into {output_root} "
+            f"({len(errors)} errors, {len(results) - moved - len(errors)} skipped)."
         )
         return 0
 
