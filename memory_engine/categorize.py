@@ -91,7 +91,7 @@ def _get_face_recognition():
 
         _FACE_MODULE = face_recognition
         return _FACE_MODULE, None
-    except Exception as exc:  # pragma: no cover - optional dependency
+    except BaseException as exc:  # pragma: no cover - optional dependency
         _FACE_IMPORT_ERROR = str(exc)
         return None, _FACE_IMPORT_ERROR
 
